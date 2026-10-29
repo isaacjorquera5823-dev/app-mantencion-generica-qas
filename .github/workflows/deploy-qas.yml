@@ -1,0 +1,49 @@
+name: Publicar QAS
+# Arma la app desde la rama indicada en el archivo RAMA del repo
+# app-mantencion-generica y la publica en GitHub Pages de este repo (QAS).
+# Se ejecuta al cambiar RAMA (o cualquier archivo) y también a mano desde
+# la pestaña Actions, para traer los últimos cambios de la rama.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+concurrency:
+  group: qas
+  cancel-in-progress: true
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+    steps:
+      - uses: actions/checkout@v4
+      - name: Leer rama a publicar
+        id: rama
+        run: echo "nombre=$(tr -d '[:space:]' < RAMA)" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@v4
+        with:
+          repository: isaacjorquera5823-dev/app-mantencion-generica
+          ref: ${{ steps.rama.outputs.nombre }}
+          path: app
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+        working-directory: app
+      # --mode qas activa el modo prueba (números PRUEBA-XXXX, datos separados de PRD)
+      - run: npm run build:qas
+        working-directory: app
+      - name: Verificar que el modo prueba quedó activo
+        run: |
+          if ! grep -rq "Modo prueba" app/dist; then
+            echo "El build no tiene modo prueba: no se publica en QAS."
+            exit 1
+          fi
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: app/dist
+      - uses: actions/deploy-pages@v4
